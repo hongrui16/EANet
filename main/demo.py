@@ -43,7 +43,7 @@ cfg.set_args(args.gpu_ids)
 cudnn.benchmark = True
 model = get_model('test')
 model = DataParallel(model).cuda()
-model_path = os.path.join(cfg.model_dir, 'snapshot_%d.pth.tar' % int(args.test_epoch))
+model_path = cfg.resume_path
 ckpt = torch.load(model_path)
 model.load_state_dict(ckpt['network'], strict=False)
 model.eval()

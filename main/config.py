@@ -44,11 +44,12 @@ class Config:
     cur_dir = osp.dirname(os.path.abspath(__file__))
     root_dir = osp.join(cur_dir, '..')
     data_dir = osp.join(root_dir, 'data')
-    output_dir = osp.join(root_dir, 'output')
-    model_dir = osp.join(output_dir, 'model_dump')
-    vis_dir = osp.join(output_dir, 'vis')
-    log_dir = osp.join(output_dir, 'log')
-    result_dir = osp.join(output_dir, 'result')
+    log_dir = osp.join(root_dir, 'log')
+    # output_dir = osp.join(root_dir, 'output')
+    # model_dir = osp.join(output_dir, 'model_dump')
+    # vis_dir = osp.join(output_dir, 'vis')
+    
+    # result_dir = osp.join(output_dir, 'result')
     # human_model_path = osp.join(root_dir, 'common', 'utils', 'human_model_files')
     human_model_path = '/home/rhong5/research_pro/hand_modeling_pro/HandPoseSD/body_models'
     
