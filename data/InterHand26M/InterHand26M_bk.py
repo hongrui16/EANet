@@ -48,7 +48,7 @@ class Jr():
         return torch.matmul(self.J_regressor, v)
 
 
-def adjust_joint_img(joint_img, bb2img_trans):
+def adjust_joint_img(joint_img):
     joint_img[:,0] *= cfg.input_img_shape[1] / cfg.output_hm_shape[2]
     joint_img[:,1] *= cfg.input_img_shape[0] / cfg.output_hm_shape[1]
     joint_img[:,2] = ((joint_img[:,2] / cfg.output_hm_shape[0])*2-1) * (cfg.bbox_3d_size/2)
@@ -59,11 +59,6 @@ def adjust_joint_img(joint_img, bb2img_trans):
 class InterHand26M(torch.utils.data.Dataset):
     def __init__(self, transform = None, data_split = 'test', debug = False, **kwargs):        
         self.load_one_hand = kwargs.get('load_one_hand', False)
-
-        if data_split == 'train':
-            device = 'cpu'
-        elif data_split == 'test':
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
         self.transform = transform if transform is not None else transforms.Compose([
             transforms.ToTensor(),
@@ -74,13 +69,10 @@ class InterHand26M(torch.utils.data.Dataset):
         self.annot_path = osp.join('/scratch/rhong5/dataset/InterHand/InterHand2.6M_5fps_batch1/', 'annotations')
 
         self.target_img_filepath = []
-        filepath_txt = '/scratch/rhong5/dataset/InterHand/InterHand2.6M_5fps_batch1/' + self.data_split + '_SH0727_img_filepaths.txt'
-        with open(filepath_txt, 'r') as f:
-            for line in f:
-                self.target_img_filepath.append(line.strip())
+
                 
-        self.regressorR = Jr(copy.deepcopy(mano.layer['right'].J_regressor), device)
-        self.regressorL = Jr(copy.deepcopy(mano.layer['left'].J_regressor), device)
+        self.regressorR = Jr(copy.deepcopy(mano.layer['right'].J_regressor))
+        self.regressorL = Jr(copy.deepcopy(mano.layer['left'].J_regressor))
 
         # IH26M joint set
         self.joint_set = {
@@ -97,7 +89,7 @@ class InterHand26M(torch.utils.data.Dataset):
         # cache_dir = '/home/rhong5/research_pro/hand_modeling_pro/HandPoseSD/dataloader/dataset/InterHand26M/debug_mini_data'
         cache_dir = '/scratch/rhong5/dataset/InterHand/InterHand2.6M_5fps_batch1/cache'
         os.makedirs(cache_dir, exist_ok=True)
-        cache_data_file = f'{cache_dir}/{data_split}_SH_EANet_0727.pkl'
+        cache_data_file = f'{cache_dir}/{data_split}_all.pkl'
 
         if osp.exists(cache_data_file):
             print(f'Loading data from cache: {cache_data_file}')
@@ -157,8 +149,7 @@ class InterHand26M(torch.utils.data.Dataset):
             
             hand_type = ann['hand_type']
             # if hand_type not in ['right', 'left', 'interacting']:
-
-            if not osp.exists(img_path) or not img_path in self.target_img_filepath:
+            if not osp.exists(img_path):
                 continue
 
             capture_id = img['capture']
@@ -265,7 +256,6 @@ class InterHand26M(torch.utils.data.Dataset):
         focal = data['cam_param']['focal']
         princpt = data['cam_param']['princpt']
         hand_type = data['hand_type']
-        ori_hand_type = hand_type
             
         if self.debug:
             enforce_flip = True
@@ -273,21 +263,16 @@ class InterHand26M(torch.utils.data.Dataset):
             enforce_flip = False
         # img
         img = load_img(img_path)
-        # print(f'original image shape: {img.shape}') # (512, 334, 3)
         img, img2bb_trans, bb2img_trans, rot, do_flip = augmentation(img, bbox, self.data_split, enforce_flip)
-        
-        ori_img_np = img.copy()
-        
-        # print(f'after image shape: {img.shape}') # (256, 256, 3)
         img = self.transform(img.astype(np.float32))/255.
         
-        # if self.load_one_hand and hand_type == 'left':
-        #     do_flip = True
-        #     hand_type = 'right' # flip left hand to right hand
-        # elif self.load_one_hand and hand_type == 'right':
-        #     do_flip = False
-        # else:
-        #     pass
+        if self.load_one_hand and hand_type == 'left':
+            do_flip = True
+            hand_type = 'right' # flip left hand to right hand
+        elif self.load_one_hand and hand_type == 'right':
+            do_flip = False
+        else:
+            pass
 
         # ih26m hand gt
         joint_cam = data['joint_cam'] / 1000. # milimeter to meter
@@ -298,30 +283,13 @@ class InterHand26M(torch.utils.data.Dataset):
         joint_cam[self.joint_set['joint_type']['left'],:] = joint_cam[self.joint_set['joint_type']['left'],:] - joint_cam[self.joint_set['root_joint_idx']['left'],None,:] # root-relative
         joint_img = data['joint_img']
         joint_img = np.concatenate((joint_img[:,:2], joint_cam[:,2:]),1)
-        joint_img, joint_cam, joint_valid, joint_trunc, rel_trans = process_db_coord(joint_img, joint_cam, joint_valid, 
-                                                                                     rel_trans, do_flip, img_shape, 
-                                                                                     self.joint_set['flip_pairs'], img2bb_trans, 
-                                                                                     rot, self.joint_set['joints_name'],
-                                                                                     mano.th_joints_name)
-
-        scale_x = cfg.input_img_shape[0] / cfg.output_hm_shape[1]
-        scale_y = cfg.input_img_shape[1] / cfg.output_hm_shape[2]        
-        # temp_dir = 'temp_3'
-        # os.makedirs(temp_dir, exist_ok=True)
-        # temp_img = ori_img_np.copy()
-        
-        # for i in range(len(joint_img)):
-        #     if joint_img[i, 0]> 0 and joint_img[i, 1] > 0:
-        #         cv2.circle(temp_img, (int(joint_img[i, 0]*scale_x), int(joint_img[i, 1]*scale_y)), 3, (0, 255, 0), -1)
-        # cv2.imwrite(osp.join(temp_dir, f'OR_{ori_hand_type}_{idx}_joint_img.jpg'), temp_img)
+        joint_img, joint_cam, joint_valid, joint_trunc, rel_trans = process_db_coord(joint_img, joint_cam, joint_valid, rel_trans, do_flip, img_shape, self.joint_set['flip_pairs'], img2bb_trans, rot, self.joint_set['joints_name'], mano.th_joints_name)
 
         # mano coordinates (right hand)
         mano_param = data['mano_param']
         if mano_param['right'] is not None:
             mano_param['right']['hand_type'] = 'right'
-            rmano_joint_img, rmano_joint_cam, rmano_joint_trunc, rmano_pose, \
-            rmano_shape, rmano_mesh_cam = process_human_model_output(mano_param['right'], data['cam_param'], 
-                                                                     do_flip, img_shape, img2bb_trans, rot)
+            rmano_joint_img, rmano_joint_cam, rmano_joint_trunc, rmano_pose, rmano_shape, rmano_mesh_cam = process_human_model_output(mano_param['right'], data['cam_param'], do_flip, img_shape, img2bb_trans, rot)
             rmano_joint_valid = np.ones((mano.sh_joint_num,3), dtype=np.float32)
             rmano_param_valid = np.ones((mano.orig_joint_num*3), dtype=np.float32)
             rmano_shape_valid = np.ones((mano.shape_param_dim), dtype=np.float32)
@@ -340,9 +308,7 @@ class InterHand26M(torch.utils.data.Dataset):
         # mano coordinates (left hand)
         if mano_param['left'] is not None:
             mano_param['left']['hand_type'] = 'left'
-            lmano_joint_img, lmano_joint_cam, lmano_joint_trunc, lmano_pose, \
-            lmano_shape, lmano_mesh_cam = process_human_model_output(mano_param['left'], data['cam_param'], 
-                                                                     do_flip, img_shape, img2bb_trans, rot)
+            lmano_joint_img, lmano_joint_cam, lmano_joint_trunc, lmano_pose, lmano_shape, lmano_mesh_cam = process_human_model_output(mano_param['left'], data['cam_param'], do_flip, img_shape, img2bb_trans, rot)
             lmano_joint_valid = np.ones((mano.sh_joint_num,3), dtype=np.float32)
             lmano_param_valid = np.ones((mano.orig_joint_num*3), dtype=np.float32)
             lmano_shape_valid = np.ones((mano.shape_param_dim), dtype=np.float32)
@@ -378,25 +344,6 @@ class InterHand26M(torch.utils.data.Dataset):
             mano_param_valid = np.concatenate((lmano_param_valid, rmano_param_valid))
             mano_shape_valid = np.concatenate((lmano_shape_valid, rmano_shape_valid))
             mano_mesh_cam = np.concatenate((lmano_mesh_cam, rmano_mesh_cam))
-            
-            if hand_type == 'right':
-                hand_type = 'left'
-            elif hand_type == 'left':
-                hand_type = 'right'
-        
-        # temp_mano_joint_img = mano_joint_img.copy()
-        # temp_mano_joint_img[:,0] *= scale_x
-        # temp_mano_joint_img[:,1] *= scale_y
-        # print('temp_mano_joint_img', temp_mano_joint_img)
-
-        # temp_img = ori_img_np.copy()
-        # for i in range(len(mano_joint_img)):            
-        #     if temp_mano_joint_img[i, 0]> 0 and temp_mano_joint_img[i, 1] > 0:
-        #         x = int(temp_mano_joint_img[i, 0])
-        #         y = int(temp_mano_joint_img[i, 1])
-        #         cv2.circle(temp_img, (x, y), 3, (255, 0, 0), -1)
-        #     cv2.imwrite(osp.join(temp_dir, f'OR_{ori_hand_type}_{idx}_mano_joint_img.jpg'), temp_img)
-
         inputs = {'img': img}
         targets = {'joint_img': joint_img, 'mano_joint_img': mano_joint_img, 
                    'joint_cam': joint_cam, 'mano_joint_cam': mano_joint_cam, 
@@ -411,7 +358,6 @@ class InterHand26M(torch.utils.data.Dataset):
                      'focal': focal, 'princpt': princpt,
                      'img_shape': img_shape, 'img_path': img_path,
                      'hand_type': hand_type,
-                    'ori_hand_type': ori_hand_type,
                      }
         return inputs, targets, meta_info
     
@@ -457,10 +403,10 @@ class InterHand26M(torch.utils.data.Dataset):
             target_gt_l = self.regressorL(vert_gt_l)
             root_r = pred_joint_proj_r[9:10,:]
             root_l = pred_joint_proj_l[9:10,:]
-            scale_r = torch.linalg.norm(pred_joint_proj_r[9,:]- pred_joint_proj_r[0,:]) + 1e-6
-            scale_l = torch.linalg.norm(pred_joint_proj_l[9,:]- pred_joint_proj_l[0,:]) + 1e-6
-            scale_r_gt = torch.linalg.norm(target_gt_r[9,:] - target_gt_r[0,:]) + 1e-6
-            scale_l_gt = torch.linalg.norm(target_gt_l[9,:]- target_gt_l[0,:]) + 1e-6
+            scale_r = torch.linalg.norm(pred_joint_proj_r[9,:]- pred_joint_proj_r[0,:])
+            scale_l = torch.linalg.norm(pred_joint_proj_l[9,:]- pred_joint_proj_l[0,:])
+            scale_r_gt = torch.linalg.norm(target_gt_r[9,:] - target_gt_r[0,:])
+            scale_l_gt = torch.linalg.norm(target_gt_l[9,:]- target_gt_l[0,:])
             root_r_gt = target_gt_r[9:10,:]
             root_l_gt = target_gt_l[9:10,:]
 
@@ -518,7 +464,6 @@ class InterHand26M(torch.utils.data.Dataset):
         for mpvpe_sh in eval_result['mpvpe_sh']:
             if mpvpe_sh is not None:
                 tot_eval_result['mpvpe_sh'].append(mpvpe_sh)
-                
         for mpvpe_ih in eval_result['mpvpe_ih']:
             if mpvpe_ih is not None:
                 tot_eval_result['mpvpe_ih'].append(mpvpe_ih)
@@ -543,8 +488,6 @@ if __name__ == '__main__':
     mano_layer_right = copy.deepcopy(mano.layer['right']).to(device = device)
     mano_layer_left = copy.deepcopy(mano.layer['left']).to(device = device)
 
-    temp_dir = 'temp_3'
-    os.makedirs(temp_dir, exist_ok=True)
     
     cnt = 10
     while cnt > 0:
@@ -569,7 +512,6 @@ if __name__ == '__main__':
         mano_pose = targets['mano_pose']
         mano_shape = targets['mano_shape']
         bb2img_trans = meta_info['bb2img_trans']
-        ori_hand_type = meta_info['ori_hand_type']
 
         rshape = mano_shape[:mano.shape_param_dim]
         lshape = mano_shape[mano.shape_param_dim:]
@@ -590,21 +532,15 @@ if __name__ == '__main__':
         batch_size = 1
         # Visualize the results
         h, w = image.shape[:2]
-        
-        scale_x = cfg.input_img_shape[0] / cfg.output_hm_shape[1]
-        scale_y = cfg.input_img_shape[1] / cfg.output_hm_shape[2]
         # print('joint_img', joint_img[:21])
-        # joint_img = adjust_joint_img(joint_img, bb2img_trans)
+        joint_img = adjust_joint_img(joint_img)
         # print('joint_img', joint_img[:21])
         
         
         # print('mano_joint_img', mano_joint_img[:21])
-        # mano_joint_img = adjust_joint_img(mano_joint_img, bb2img_trans)
+        mano_joint_img = adjust_joint_img(mano_joint_img)
         # print('mano_joint_img', mano_joint_img[:21])
-        joint_img[:,0] *= scale_x
-        joint_img[:,1] *= scale_y
-        mano_joint_img[:,0] *= scale_x
-        mano_joint_img[:,1] *= scale_y
+        
         
         for i in range(len(joint_img)):
             if joint_img[i, 0]> 0 and joint_img[i, 1] > 0:
@@ -613,7 +549,8 @@ if __name__ == '__main__':
         for i in range(len(mano_joint_img)):
             if mano_joint_img[i, 0]> 0 and mano_joint_img[i, 1] > 0:
                 cv2.circle(image, (int(mano_joint_img[i, 0]), int(mano_joint_img[i, 1])), 3, (0, 0, 255), -1)
-        cv2.imwrite(osp.join(temp_dir, f'debug_{ori_hand_type}_{rand_idx}.jpg'), image)
+        
+        cv2.imwrite(f'{rand_idx}.jpg', image)
         # root_pose: [bs, 3]
         # hand_pose: [bs, 45]
         # shape: [bs, 10]
@@ -627,11 +564,11 @@ if __name__ == '__main__':
         joint_cam = torch.bmm(torch.from_numpy(mano.sh_joint_regressor).to(device)[None,:,:].repeat(batch_size,1,1), mesh_cam)
         joint_cam = joint_cam.squeeze().cpu().numpy()
         joint_img = cam2pixel(joint_cam, focal, princpt)
-        # print('joint_img', joint_img[:21])
+        print('joint_img', joint_img[:21])
         
         
         for i in range(len(joint_img)):
             if joint_img[i, 0]> 0 and joint_img[i, 1] > 0:
                 cv2.circle(original_image, (int(joint_img[i, 0]), int(joint_img[i, 1])), 3, (0, 255, 0), -1)
-        cv2.imwrite(osp.join(temp_dir, f'debug_{ori_hand_type}_{rand_idx}_2.jpg'), original_image)
+        cv2.imwrite(f'{rand_idx}_2.jpg', original_image)
         cnt -= 1

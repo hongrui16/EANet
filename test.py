@@ -3,13 +3,13 @@ import argparse
 from tqdm import tqdm
 import numpy as np
 import torch.backends.cudnn as cudnn
-from config import cfg
-from base import Tester
+from main.config import cfg
+from common.base import Tester
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', type=str, dest='gpu_ids')
-    parser.add_argument('--test_epoch', type=str, dest='test_epoch')
+    parser.add_argument('--gpu', type=str, default='0', dest='gpu_ids')
+    parser.add_argument('--test_epoch', type=str, default=None, dest='test_epoch')
     args = parser.parse_args()
 
     if not args.gpu_ids:
@@ -21,7 +21,7 @@ def parse_args():
         gpus[1] = int(gpus[1]) + 1
         args.gpu_ids = ','.join(map(lambda x: str(x), list(range(*gpus))))
     
-    assert args.test_epoch, 'Test epoch is required.'
+    # assert args.test_epoch, 'Test epoch is required.'
     return args
 
 def main():
@@ -30,7 +30,7 @@ def main():
     cfg.set_args(args.gpu_ids)
     cudnn.benchmark = True
 
-    tester = Tester(args.test_epoch)
+    tester = Tester()
     tester._make_batch_generator()
     tester._make_model()
     

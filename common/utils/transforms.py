@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import scipy
-from config import cfg
+from main.config import cfg
 from torch.nn import functional as F
 import torchgeometry as tgm
 

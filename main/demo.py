@@ -13,9 +13,9 @@ sys.path.insert(0, osp.join('..', 'main'))
 sys.path.insert(0, osp.join('..', 'common'))
 from config import cfg
 from model import get_model
-from utils.preprocessing import load_img, process_bbox, augmentation
-from utils.vis import save_obj, vis_mesh
-from utils.human_models import mano
+from common.utils.preprocessing import load_img, process_bbox, augmentation
+from common.utils.vis import save_obj, vis_mesh
+from common.utils.human_models import mano
 import glob
 def parse_args():
     parser = argparse.ArgumentParser()

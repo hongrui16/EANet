@@ -11,6 +11,8 @@ class Config:
     trainset_2d = []
     testset = 'InterHand26M'
 
+    print_freq = 100
+    
     ## model setting
     hand_resnet_type = 50
 
@@ -26,7 +28,7 @@ class Config:
     lr_dec_factor = 10
     lr_dec_epoch = [15,17]
     end_epoch = 40
-    train_batch_size = 32
+    train_batch_size = 80
     
     ## testing config
     test_batch_size = 8
@@ -47,8 +49,13 @@ class Config:
     vis_dir = osp.join(output_dir, 'vis')
     log_dir = osp.join(output_dir, 'log')
     result_dir = osp.join(output_dir, 'result')
-    human_model_path = osp.join(root_dir, 'common', 'utils', 'human_model_files')
-
+    # human_model_path = osp.join(root_dir, 'common', 'utils', 'human_model_files')
+    human_model_path = '/home/rhong5/research_pro/hand_modeling_pro/HandPoseSD/body_models'
+    
+    resent50_encoder_path = '/scratch/rhong5/weights/temp_training_weights/InterHand26MClassification/2025-08-10-23-49-58-840114_4076230/best_model.pth'
+    resume_path = '/home/rhong5/research_pro/hand_modeling_pro/EANet/output/model_dump/snapshot.pth.tar' ## 
+    
+    
     def set_args(self, gpu_ids, continue_train=False):
         self.gpu_ids = gpu_ids
         self.num_gpus = len(self.gpu_ids.split(','))
@@ -60,14 +67,14 @@ class Config:
 cfg = Config()
 
 sys.path.insert(0, osp.join(cfg.root_dir, 'common'))
-from utils.dir import add_pypath, make_folder
+from common.utils.dir import add_pypath, make_folder
 add_pypath(osp.join(cfg.data_dir))
 for i in range(len(cfg.trainset_3d)):
     add_pypath(osp.join(cfg.data_dir, cfg.trainset_3d[i]))
 for i in range(len(cfg.trainset_2d)):
     add_pypath(osp.join(cfg.data_dir, cfg.trainset_2d[i]))
 add_pypath(osp.join(cfg.data_dir, cfg.testset))
-make_folder(cfg.model_dir)
-make_folder(cfg.vis_dir)
-make_folder(cfg.log_dir)
-make_folder(cfg.result_dir)
+# make_folder(cfg.model_dir)
+# make_folder(cfg.vis_dir)
+# make_folder(cfg.log_dir)
+# make_folder(cfg.result_dir)

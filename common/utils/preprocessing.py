@@ -1,10 +1,10 @@
 import numpy as np
 import cv2
 import random
-from config import cfg
+from main.config import cfg
 import math
-from utils.human_models import mano
-from utils.transforms import cam2pixel, transform_joint_to_other_db
+from common.utils.human_models import mano
+from common.utils.transforms import cam2pixel, transform_joint_to_other_db
 from plyfile import PlyData, PlyElement
 import torch
 
@@ -97,8 +97,7 @@ def augmentation(img, bbox, data_split, enforce_flip=None):
         pass
     elif enforce_flip is True:
         do_flip = True
-    elif enforce_flip is False:
-        do_flip = False
+
     
     img, trans, inv_trans = generate_patch_image(img, bbox, scale, rot, do_flip, cfg.input_img_shape)
     img = np.clip(img * color_scale[None,None,:], 0, 255)
@@ -167,7 +166,9 @@ def gen_trans_from_patch_cv(c_x, c_y, src_width, src_height, dst_width, dst_heig
     trans = trans.astype(np.float32)
     return trans
 
-def process_db_coord(joint_img, joint_cam, joint_valid, rel_trans, do_flip, img_shape, flip_pairs, img2bb_trans, rot, src_joints_name, target_joints_name):
+def process_db_coord(joint_img, joint_cam, joint_valid, rel_trans, do_flip, img_shape, 
+                     flip_pairs, img2bb_trans, rot, src_joints_name, target_joints_name):
+    
     joint_img, joint_cam, joint_valid, rel_trans = joint_img.copy(), joint_cam.copy(), joint_valid.copy(), rel_trans.copy()
 
     # flip augmentation

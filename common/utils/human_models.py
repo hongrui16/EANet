@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import os.path as osp
-from config import cfg
+from main.config import cfg
 from utils.transforms import transform_joint_to_other_db
 from utils.smplx import smplx
 import pickle

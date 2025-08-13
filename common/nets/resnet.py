@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 from torchvision.models.resnet import BasicBlock, Bottleneck
-from torchvision.models.resnet import model_urls
+# from torchvision.models.resnet import model_urls
+from torchvision import models
 
 class ResNetBackbone(nn.Module):
 
-    def __init__(self, resnet_type):
+    def __init__(self, resnet_type = 50):
 	
         resnet_spec = {18: (BasicBlock, [2, 2, 2, 2], [64, 64, 128, 256, 512], 'resnet18'),
 		       34: (BasicBlock, [3, 4, 6, 3], [64, 64, 128, 256, 512], 'resnet34'),
@@ -69,12 +70,62 @@ class ResNetBackbone(nn.Module):
         return x
 
     def init_weights(self):
-        org_resnet = torch.utils.model_zoo.load_url(model_urls[self.name])
-        # drop orginal resnet fc layer, add 'None' in case of no fc layer, that will raise error
-        org_resnet.pop('fc.weight', None)
-        org_resnet.pop('fc.bias', None)
+        # org_resnet = torch.utils.model_zoo.load_url(model_urls[self.name])
+        # # drop orginal resnet fc layer, add 'None' in case of no fc layer, that will raise error
+        # org_resnet.pop('fc.weight', None)
+        # org_resnet.pop('fc.bias', None)
         
-        self.load_state_dict(org_resnet)
+        # self.load_state_dict(org_resnet)
         print("Initialize resnet from model zoo")
 
 
+
+class Resnet50Encoder(nn.Module):
+    """
+    Returns spatial features before global avgpool (output of layer4).
+    If you want the pooled 2048-D vector, pass pool=True in forward.
+    """
+    def __init__(self, resume_path=None, pretrained=True):
+        super().__init__()
+        # New torchvision uses weights arg; fall back if older
+        try:
+            weights = models.ResNet50_Weights.IMAGENET1K_V2 if pretrained else None
+            self.feature_encoder = models.resnet50(weights=weights)
+        except Exception:
+            self.feature_encoder = models.resnet50(pretrained=pretrained)
+
+        # Remove final classifier; keep avgpool around in case you want pooled vector
+        self.feature_encoder.fc = nn.Identity()
+
+        # Optionally load your old classifier checkpoint; we only care about backbone
+        if resume_path is not None:
+            ckpt = torch.load(resume_path, map_location="cpu")
+
+            # Easiest: load into the whole module with strict=False.
+            # This will load all matching keys under feature_encoder.* and ignore old heads.
+            missing, unexpected = self.load_state_dict(ckpt, strict=False)
+            # (optional) print what didn’t load
+            if len(missing) or len(unexpected):
+                print("[load_state_dict] missing:", missing)
+                print("[load_state_dict] unexpected:", unexpected)
+
+    def forward(self, x, pool=False):
+        # Manually run backbone to get pre-avgpool maps
+        x = self.feature_encoder.conv1(x)   # [B, 64, H/2, W/2]
+        x = self.feature_encoder.bn1(x)
+        x = self.feature_encoder.relu(x)
+        x = self.feature_encoder.maxpool(x) # [B, 64, H/4, W/4]
+
+        x = self.feature_encoder.layer1(x)  # [B, 256, H/4,  W/4]
+        x = self.feature_encoder.layer2(x)  # [B, 512, H/8,  W/8]
+        x = self.feature_encoder.layer3(x)  # [B, 1024, H/16, W/16]
+        x = self.feature_encoder.layer4(x)  # [B, 2048, H/32, W/32]  <-- pre-avgpool
+
+        if pool:
+            # Return the 2048-D vector if you ever need it
+            x = self.feature_encoder.avgpool(x)   # [B, 2048, 1, 1]
+            x = torch.flatten(x, 1)               # [B, 2048]
+        return x
+
+    def init_weights(self):
+        pass

@@ -7,12 +7,14 @@ import abc
 from torch.utils.data import DataLoader
 import torch.optim
 import torchvision.transforms as transforms
-from timer import Timer
+from common.timer import Timer
 from logger import colorlogger
 from torch.nn.parallel.data_parallel import DataParallel
-from config import cfg
-from model import get_model
-from dataset import MultipleDatasets
+from main.config import cfg
+from common.EANet import EANet
+from data.dataset import MultipleDatasets
+
+import datetime
 
 # dynamic dataset import
 for i in range(len(cfg.trainset_3d)):
@@ -21,32 +23,27 @@ for i in range(len(cfg.trainset_2d)):
     exec('from ' + cfg.trainset_2d[i] + ' import ' + cfg.trainset_2d[i])
 exec('from ' + cfg.testset + ' import ' + cfg.testset)
 
-class Base(object):
-    __metaclass__ = abc.ABCMeta
 
-    def __init__(self, log_name='logs.txt'):
-        
+class Trainer:
+    def __init__(self):
+        super(Trainer, self).__init__()
         self.cur_epoch = 0
 
         # timer
         self.tot_timer = Timer()
         self.gpu_timer = Timer()
         self.read_timer = Timer()
+        slurm_id = os.getenv('SLURM_JOB_ID', 'local')
+        current_time = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
         # logger
-        self.logger = colorlogger(cfg.log_dir, log_name=log_name)
-
-    @abc.abstractmethod
-    def _make_batch_generator(self):
-        return
-
-    @abc.abstractmethod
-    def _make_model(self):
-        return
-
-class Trainer(Base):
-    def __init__(self):
-        super(Trainer, self).__init__(log_name = 'train_logs.txt')
+        log_dir = cfg.log_dir
+        self.log_dir = f'{log_dir}_{current_time}_{slurm_id}'
+        
+        os.makedirs(self.log_dir, exist_ok=True)
+        
+        log_name = 'training_log.txt'
+        self.logger = colorlogger(self.log_dir, log_name=log_name)
 
     def get_optimizer(self, model):
         total_params = []
@@ -56,7 +53,8 @@ class Trainer(Base):
         return optimizer
 
     def save_model(self, state, epoch):
-        file_path = osp.join(cfg.model_dir,'snapshot_{}.pth.tar'.format(str(epoch)))
+        # file_path = osp.join(cfg.model_dir,'snapshot_{}.pth.tar'.format(str(epoch)))
+        file_path = osp.join(self.log_dir,'snapshot.pth.tar')
 
         # do not save mano layer weights
         dump_key = []
@@ -70,9 +68,8 @@ class Trainer(Base):
         self.logger.info("Write snapshot into {}".format(file_path))
 
     def load_model(self, model, optimizer):
-        model_file_list = glob.glob(osp.join(cfg.model_dir,'*.pth.tar'))
-        cur_epoch = max([int(file_name[file_name.find('snapshot_') + 9 : file_name.find('.pth.tar')]) for file_name in model_file_list])
-        ckpt_path = osp.join(cfg.model_dir, 'snapshot_' + str(cur_epoch) + '.pth.tar')
+
+        ckpt_path = cfg.resume_path
         ckpt = torch.load(ckpt_path) 
         start_epoch = ckpt['epoch'] + 1
         model.load_state_dict(ckpt['network'], strict=False)
@@ -131,7 +128,7 @@ class Trainer(Base):
     def _make_model(self):
         # prepare network
         self.logger.info("Creating graph and optimizer...")
-        model = get_model('train')
+        model = EANet('train')
         model = DataParallel(model).cuda()
         optimizer = self.get_optimizer(model)
         if cfg.continue_train:
@@ -144,10 +141,26 @@ class Trainer(Base):
         self.model = model
         self.optimizer = optimizer
 
-class Tester(Base):
-    def __init__(self, test_epoch):
-        self.test_epoch = int(test_epoch)
-        super(Tester, self).__init__(log_name = 'test_logs.txt')
+class Tester:
+    def __init__(self):
+        super(Tester, self).__init__()
+        
+        self.cur_epoch = 0
+
+        # timer
+        self.tot_timer = Timer()
+        self.gpu_timer = Timer()
+        self.read_timer = Timer()
+        self.resume_path = cfg.resume_path
+        ## get the model weight absolute directory
+        weight_dir = os.path.dirname(self.resume_path)
+        self.logger.info('Model weight directory: {}'.format(weight_dir))
+        current_time = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        self.log_dir = os.path.join(weight_dir, f'test_{current_time}')
+        # logger
+        self.logger = colorlogger(self.log_dir, log_name='test.log')
+
+        
 
     def _make_batch_generator(self):
         # data load and construct batch generator
@@ -159,15 +172,17 @@ class Tester(Base):
         self.batch_generator = batch_generator
 
     def _make_model(self):
-        model_path = os.path.join(cfg.model_dir, 'snapshot_%d.pth.tar' % self.test_epoch)
-        assert os.path.exists(model_path), 'Cannot find model at ' + model_path
-        self.logger.info('Load checkpoint from {}'.format(model_path))
-        
+        # model_path = os.path.join(cfg.model_dir, 'snapshot_%d.pth.tar' % self.test_epoch)
+        # model_path = '/home/rhong5/research_pro/hand_modeling_pro/EANet/weights/snapshot_29.pth.tar'
+
+        assert os.path.exists(self.resume_path), 'Cannot find model at ' + self.resume_path
+        self.logger.info('Load checkpoint from {}'.format(self.resume_path))
+
         # prepare network
         self.logger.info("Creating graph...")
-        model = get_model('test')
+        model = EANet('test')
         model = DataParallel(model).cuda()
-        ckpt = torch.load(model_path)
+        ckpt = torch.load(self.resume_path)
         model.load_state_dict(ckpt['network'], strict=False)
         model.eval()
 
