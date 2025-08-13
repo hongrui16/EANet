@@ -154,11 +154,11 @@ class Tester:
         self.resume_path = cfg.resume_path
         ## get the model weight absolute directory
         weight_dir = os.path.dirname(self.resume_path)
-        self.logger.info('Model weight directory: {}'.format(weight_dir))
         current_time = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         self.log_dir = os.path.join(weight_dir, f'test_{current_time}')
         # logger
         self.logger = colorlogger(self.log_dir, log_name='test.log')
+        self.logger.info('Model weight directory: {}'.format(weight_dir))
 
         
 

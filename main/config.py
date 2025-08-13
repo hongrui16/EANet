@@ -54,7 +54,8 @@ class Config:
     human_model_path = '/home/rhong5/research_pro/hand_modeling_pro/HandPoseSD/body_models'
     
     resent50_encoder_path = '/scratch/rhong5/weights/temp_training_weights/InterHand26MClassification/2025-08-10-23-49-58-840114_4076230/best_model.pth'
-    resume_path = '/home/rhong5/research_pro/hand_modeling_pro/EANet/output/model_dump/snapshot.pth.tar' ## 
+    # resume_path = '/home/rhong5/research_pro/hand_modeling_pro/EANet/output/model_dump/snapshot.pth.tar' ## 
+    resume_path = '/home/rhong5/research_pro/hand_modeling_pro/EANet/output/gesturePretrainedEncoderVersion/snapshot.pth.tar'
     
     
     def set_args(self, gpu_ids, continue_train=False):
