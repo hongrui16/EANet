@@ -1,50 +1,63 @@
 import logging
 import os
+import sys
 
-OK = '\033[92m'
-WARNING = '\033[93m'
-FAIL = '\033[91m'
-END = '\033[0m'
-
-PINK = '\033[95m'
-BLUE = '\033[94m'
-GREEN = OK
-RED = FAIL
-WHITE = END
-YELLOW = WARNING
-
-class colorlogger():
+class colorlogger:
     def __init__(self, log_dir, log_name='train_logs.txt'):
-        # set log
         self._logger = logging.getLogger(log_name)
-        self._logger.setLevel(logging.INFO)
+        self._logger.setLevel(logging.DEBUG)
+        self._logger.propagate = False
+        if self._logger.handlers:
+            self._logger.handlers.clear()
+
+        os.makedirs(log_dir, exist_ok=True)
         log_file = os.path.join(log_dir, log_name)
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        file_log = logging.FileHandler(log_file, mode='a')
-        file_log.setLevel(logging.INFO)
-        console_log = logging.StreamHandler()
-        console_log.setLevel(logging.INFO)
-        formatter = logging.Formatter(
-            "{}%(asctime)s{} %(message)s".format(GREEN, END),
-            "%m-%d %H:%M:%S")
-        file_log.setFormatter(formatter)
-        console_log.setFormatter(formatter)
-        self._logger.addHandler(file_log)
-        self._logger.addHandler(console_log)
 
-    def debug(self, msg):
-        self._logger.debug(str(msg))
+        # 文件日志（无颜色）
+        file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+        file_handler.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(message)s", datefmt="%m-%d %H:%M:%S"
+        ))
+        self._logger.addHandler(file_handler)
 
-    def info(self, msg):
-        self._logger.info(str(msg))
+        # 控制台日志（带颜色）
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(self._get_color_formatter())
+        self._logger.addHandler(console_handler)
 
-    def warning(self, msg):
-        self._logger.warning(WARNING + 'WRN: ' + str(msg) + END)
+    def _get_color_formatter(self):
+        # ANSI 颜色
+        COLORS = {
+            'DEBUG': '\033[94m',   # 蓝色
+            'INFO': '\033[92m',    # 绿色
+            'WARNING': '\033[93m', # 黄色
+            'ERROR': '\033[91m',   # 红色
+            'CRITICAL': '\033[1;91m' # 加粗红
+        }
+        RESET = '\033[0m'
 
-    def critical(self, msg):
-        self._logger.critical(RED + 'CRI: ' + str(msg) + END)
+        class ColorFormatter(logging.Formatter):
+            def format(self, record):
+                level_color = COLORS.get(record.levelname, '')
+                message = super().format(record)
+                return f"{level_color}{message}{RESET}"
 
-    def error(self, msg):
-        self._logger.error(RED + 'ERR: ' + str(msg) + END)
+        return ColorFormatter(
+            "%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%m-%d %H:%M:%S"
+        )
 
+    # 日志方法
+    def debug(self, msg):    self._logger.debug(str(msg))
+    def info(self, msg):     self._logger.info(str(msg))
+    def warning(self, msg):  self._logger.warning(str(msg))
+    def error(self, msg):    self._logger.error(str(msg))
+    def critical(self, msg): self._logger.critical(str(msg))
+
+
+if __name__ == "__main__":
+    logger = colorlogger(log_dir='logs')
+    logger.info("This is an info message.")
+    logger.error("This is an error message.")
+    
+    
