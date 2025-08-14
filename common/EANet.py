@@ -17,8 +17,21 @@ from common.nets.module import Transformer
 from common.nets.loss import CoordLoss, ParamLoss
 from common.utils.human_models import mano
 from common.utils.transforms import rot6d_to_axis_angle
+from data.InterHand26M.hand_gesture_names import TWO_HAND_GESTURE_CLASS_MAPPING
+from common.modules import CrossFromScalars
 
 from main.config import cfg
+
+main_ids = []
+global_sub_ids = []
+for class_name, class_info in TWO_HAND_GESTURE_CLASS_MAPPING.items():
+    main_ids.append(class_info['main_id'])
+    global_sub_ids.append(class_info['global_id'])
+
+main_ids = set(main_ids)
+global_sub_ids = set(global_sub_ids)
+NUM_MAIN_CLASSES = len(main_ids)
+NUM_SUB_CLASSES = len(global_sub_ids)
 
 def init_weights(m):
     try:
@@ -139,8 +152,13 @@ class RotationNet(nn.Module):
         self.rpose_out = make_linear_layers([self.joint_num*(512+3), (mano.orig_joint_num-1)*6], relu_final=False) # without root joint
         self.lroot_pose_out = make_linear_layers([self.joint_num*(512+3), 6], relu_final=False)
         self.lpose_out = make_linear_layers([self.joint_num*(512+3), (mano.orig_joint_num-1)*6], relu_final=False) # without root joint
+        self.use_gesture_logits = cfg.use_gesture_logits
+        if self.use_gesture_logits:
+            self.main_cross_scalar = CrossFromScalars()
+            self.sub_cross_scalar = CrossFromScalars()
 
-    def forward(self, rhand_feat, lhand_feat, rjoint_img, ljoint_img):
+
+    def forward(self, rhand_feat, lhand_feat, rjoint_img, ljoint_img, main_logits = None, sub_logits = None):
         batch_size = rhand_feat.shape[0]
 
         # shape and camera parameters
@@ -155,6 +173,10 @@ class RotationNet(nn.Module):
         lhand_feat = self.lconv(lhand_feat)
         rhand_feat = sample_joint_features(rhand_feat, rjoint_img[:,:,:2]) # batch_size, joint_num, feat_dim
         lhand_feat = sample_joint_features(lhand_feat, ljoint_img[:,:,:2]) # batch_size, joint_num, feat_dim
+
+        if self.use_gesture_logits:
+            rhand_feat = self.main_cross_scalar(rhand_feat, main_logits)
+            lhand_feat = self.sub_cross_scalar(lhand_feat, sub_logits)
 
         # import pdb; pdb.set_trace()
         rhand_feat = self.Transformer_r(rhand_feat)
@@ -176,7 +198,14 @@ class EANet(nn.Module):
     def __init__(self, mode='train'):
         super(EANet, self).__init__()
         # self.backbone = ResNetBackbone(cfg.hand_resnet_type)
-        self.backbone = Resnet50Encoder(cfg.resent50_encoder_path)
+
+        
+        self.use_gesture_logits = cfg.use_gesture_logits
+        self.backbone = Resnet50Encoder(cfg.resent50_encoder_path,
+                                        use_gesture_logits=self.use_gesture_logits,
+                                        num_main_classes=NUM_MAIN_CLASSES,
+                                        num_sub_classes=NUM_SUB_CLASSES)
+
         self.position_net = PositionNet()
         
         self.rotation_net = RotationNet()
@@ -193,10 +222,12 @@ class EANet(nn.Module):
         self.trainable_modules = [self.backbone, self.position_net, self.rotation_net]
         self.bce = nn.BCELoss()
         
-    def forward_rotation_net(self, rhand_feat, lhand_feat, rhand_coord, lhand_coord):
+    def forward_rotation_net(self, rhand_feat, lhand_feat, rhand_coord, lhand_coord, 
+                             main_logits = None, sub_logits = None):
         rroot_pose_6d, rpose_param_6d, rshape_param, rcam_param,\
             lroot_pose_6d, lpose_param_6d, lshape_param, \
-                lcam_param, rel_trans = self.rotation_net(rhand_feat, lhand_feat, rhand_coord, lhand_coord)
+                lcam_param, rel_trans = self.rotation_net(rhand_feat, lhand_feat, rhand_coord, lhand_coord,
+                                                          main_logits=main_logits, sub_logits=sub_logits)
         rroot_pose = rot6d_to_axis_angle(rroot_pose_6d).reshape(-1,3)
         rpose_param = rot6d_to_axis_angle(rpose_param_6d.view(-1,6)).reshape(-1,(mano.orig_joint_num-1)*3)
         lroot_pose = rot6d_to_axis_angle(lroot_pose_6d).reshape(-1,3)
@@ -227,7 +258,12 @@ class EANet(nn.Module):
 
     def forward(self, inputs, targets=None, meta_info=None, mode=None):
         # body network
-        hand_feat = self.backbone(inputs['img'])
+        if self.use_gesture_logits:
+            hand_feat, main_logits, sub_logits = self.backbone(inputs['img'])
+        else:
+            hand_feat = self.backbone(inputs['img'])
+            main_logits = None
+            sub_logits = None
         rjoint_img, ljoint_img, rhand_feat, lhand_feat = self.position_net(hand_feat)
         ## rjoint_img, ljoint_img: batch_size, joint_num, 3 (x,y,z), x and y are pixel coordinates, z is in the camera coordination
         
@@ -235,7 +271,9 @@ class EANet(nn.Module):
         rroot_pose, rhand_pose, rshape, rcam_param, \
             lroot_pose, lhand_pose, lshape, lcam_param, \
                 rel_trans = self.forward_rotation_net(rhand_feat, lhand_feat,
-                                                      rjoint_img.detach(), ljoint_img.detach())
+                                                      rjoint_img.detach(), ljoint_img.detach(),
+                                                      main_logits=main_logits, sub_logits=sub_logits
+                                                      )
 
         ## rel_trans is the relative translation of the two hands wrist, in the camera coordinate
         ## rroot_pose, rhand_pose, lroot_pose, lhand_pose are in axis-angle format, each has shape (batch_size, 3) for root joint and (batch_size, 6) for hand joints

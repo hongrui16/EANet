@@ -52,11 +52,12 @@ class Config:
     # result_dir = osp.join(output_dir, 'result')
     # human_model_path = osp.join(root_dir, 'common', 'utils', 'human_model_files')
     human_model_path = '/home/rhong5/research_pro/hand_modeling_pro/HandPoseSD/body_models'
-    
+    resume_path = None
     resent50_encoder_path = '/scratch/rhong5/weights/temp_training_weights/InterHand26MClassification/2025-08-10-23-49-58-840114_4076230/best_model.pth'
     # resume_path = '/home/rhong5/research_pro/hand_modeling_pro/EANet/output/model_dump/snapshot.pth.tar' ## 
-    resume_path = '/home/rhong5/research_pro/hand_modeling_pro/EANet/output/gesturePretrainedEncoderVersion/snapshot.pth.tar'
+    # resume_path = '/home/rhong5/research_pro/hand_modeling_pro/EANet/output/gesturePretrainedEncoderVersion/snapshot.pth.tar'
     
+    use_gesture_logits= True
     
     def set_args(self, gpu_ids, continue_train=False):
         self.gpu_ids = gpu_ids

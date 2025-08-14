@@ -85,7 +85,7 @@ class Resnet50Encoder(nn.Module):
     Returns spatial features before global avgpool (output of layer4).
     If you want the pooled 2048-D vector, pass pool=True in forward.
     """
-    def __init__(self, resume_path=None, pretrained=True):
+    def __init__(self, resume_path=None, pretrained=True, **kwargs):
         super().__init__()
         # New torchvision uses weights arg; fall back if older
         try:
@@ -94,9 +94,33 @@ class Resnet50Encoder(nn.Module):
         except Exception:
             self.feature_encoder = models.resnet50(pretrained=pretrained)
 
+        self.use_gesture_logits = kwargs.get('use_gesture_logits', False)
+        num_main_classes = kwargs.get('num_main_classes', 0)
+        num_sub_classes = kwargs.get('num_sub_classes', 0)
+        
         # Remove final classifier; keep avgpool around in case you want pooled vector
+        self.in_features = self.feature_encoder.fc.in_features
         self.feature_encoder.fc = nn.Identity()
-
+        
+        
+                        
+        if self.use_gesture_logits:
+            if num_main_classes > 0:
+                self.main_classifier = nn.Sequential(
+                    nn.Linear(self.in_features, 1024),
+                    nn.ReLU(),
+                    nn.Dropout(0.5),
+                    nn.Linear(1024, num_main_classes)
+                )
+            if num_sub_classes > 0:
+                self.sub_classifier = nn.Sequential(
+                    nn.Linear(self.in_features, 1024),
+                    nn.ReLU(),
+                    nn.Dropout(0.5),
+                nn.Linear(1024, num_sub_classes)
+                )
+            
+            
         # Optionally load your old classifier checkpoint; we only care about backbone
         if resume_path is not None:
             ckpt = torch.load(resume_path, map_location="cpu")
@@ -109,6 +133,7 @@ class Resnet50Encoder(nn.Module):
                 print("[load_state_dict] missing:", missing)
                 print("[load_state_dict] unexpected:", unexpected)
 
+
     def forward(self, x, pool=False):
         # Manually run backbone to get pre-avgpool maps
         x = self.feature_encoder.conv1(x)   # [B, 64, H/2, W/2]
@@ -119,13 +144,19 @@ class Resnet50Encoder(nn.Module):
         x = self.feature_encoder.layer1(x)  # [B, 256, H/4,  W/4]
         x = self.feature_encoder.layer2(x)  # [B, 512, H/8,  W/8]
         x = self.feature_encoder.layer3(x)  # [B, 1024, H/16, W/16]
-        x = self.feature_encoder.layer4(x)  # [B, 2048, H/32, W/32]  <-- pre-avgpool
+        feat = self.feature_encoder.layer4(x)  # [B, 2048, H/32, W/32]  <-- pre-avgpool
 
-        if pool:
+        main_logits = None
+        sub_logits = None
+        if self.use_gesture_logits:
             # Return the 2048-D vector if you ever need it
-            x = self.feature_encoder.avgpool(x)   # [B, 2048, 1, 1]
+            x = self.feature_encoder.avgpool(feat)   # [B, 2048, 1, 1]
             x = torch.flatten(x, 1)               # [B, 2048]
-        return x
+            main_logits = self.main_classifier(x)
+            sub_logits = self.sub_classifier(x)
+            return feat, main_logits, sub_logits
+        else:
+            return feat
 
     def init_weights(self):
         pass

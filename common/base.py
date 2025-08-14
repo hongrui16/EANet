@@ -38,7 +38,7 @@ class Trainer:
 
         # logger
         log_dir = cfg.log_dir
-        self.log_dir = f'{log_dir}_{current_time}_{slurm_id}'
+        self.log_dir = f'{log_dir}/{current_time}_{slurm_id}'
         
         os.makedirs(self.log_dir, exist_ok=True)
         
@@ -193,6 +193,6 @@ class Tester:
         return eval_result
 
     def _print_eval_result(self, eval_result):
-        self.testset.print_eval_result(eval_result)
+        self.testset.print_eval_result(eval_result, self.logger)
 
 

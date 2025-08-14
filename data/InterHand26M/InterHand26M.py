@@ -59,6 +59,7 @@ def adjust_joint_img(joint_img, bb2img_trans):
 class InterHand26M(torch.utils.data.Dataset):
     def __init__(self, transform = None, data_split = 'test', debug = False, **kwargs):        
         self.load_one_hand = kwargs.get('load_one_hand', False)
+        self.logger = kwargs.get('logger', None)
 
         if data_split == 'train':
             device = 'cpu'
@@ -494,7 +495,10 @@ class InterHand26M(torch.utils.data.Dataset):
             
         return eval_result
 
-    def print_eval_result(self, eval_result):
+    def print_eval_result(self, eval_result, logger=None):
+        if logger is not None:
+            self.logger = logger
+            
         tot_eval_result = {
                 'mpjpe_sh': [[] for _ in range(self.joint_set['joint_num'])],
                 'mpjpe_ih': [[] for _ in range(self.joint_set['joint_num'])],
@@ -525,12 +529,20 @@ class InterHand26M(torch.utils.data.Dataset):
 
 
         eval_result = tot_eval_result
-        print('MPVPE for all hand sequences: %.2f mm' % (np.mean(eval_result['mpvpe_sh'] + eval_result['mpvpe_ih'])))
-        print('MPVPE for single hand sequences: %.2f mm' % (np.mean(eval_result['mpvpe_sh'])))
-        print('MPVPE for interacting hand sequences: %.2f mm' % (np.mean(eval_result['mpvpe_ih'])))
-        print('MPJPE for all hand sequences: %.2f mm' % (np.mean(eval_result['mpjpe_sh'] + eval_result['mpjpe_ih'])))
-        print('MPJPE for single hand sequences: %.2f mm' % (np.mean(eval_result['mpjpe_sh'])))
-        print('MPJPE for interacting hand sequences: %.2f mm' % (np.mean(eval_result['mpjpe_ih'])))
+        if self.logger is not None:
+            self.logger.info('MPVPE for all hand sequences: %.2f mm' % (np.mean(eval_result['mpvpe_sh'] + eval_result['mpvpe_ih'])))
+            self.logger.info('MPVPE for single hand sequences: %.2f mm' % (np.mean(eval_result['mpvpe_sh'])))
+            self.logger.info('MPVPE for interacting hand sequences: %.2f mm' % (np.mean(eval_result['mpvpe_ih'])))
+            self.logger.info('MPJPE for all hand sequences: %.2f mm' % (np.mean(eval_result['mpjpe_sh'] + eval_result['mpjpe_ih'])))
+            self.logger.info('MPJPE for single hand sequences: %.2f mm' % (np.mean(eval_result['mpjpe_sh'])))
+            self.logger.info('MPJPE for interacting hand sequences: %.2f mm' % (np.mean(eval_result['mpjpe_ih'])))
+        else:    
+            print('MPVPE for all hand sequences: %.2f mm' % (np.mean(eval_result['mpvpe_sh'] + eval_result['mpvpe_ih'])))
+            print('MPVPE for single hand sequences: %.2f mm' % (np.mean(eval_result['mpvpe_sh'])))
+            print('MPVPE for interacting hand sequences: %.2f mm' % (np.mean(eval_result['mpvpe_ih'])))
+            print('MPJPE for all hand sequences: %.2f mm' % (np.mean(eval_result['mpjpe_sh'] + eval_result['mpjpe_ih'])))
+            print('MPJPE for single hand sequences: %.2f mm' % (np.mean(eval_result['mpjpe_sh'])))
+            print('MPJPE for interacting hand sequences: %.2f mm' % (np.mean(eval_result['mpjpe_ih'])))
 
 
 if __name__ == '__main__':
